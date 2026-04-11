@@ -10,9 +10,9 @@ The standard, self-hosted Docker version of Plane will be deployed on a GCP Comp
 2.  **Dependencies:** Ensure Docker and Docker Compose are installed.
 3.  **Plane Setup:** Run Plane's `setup.sh`, configure `plane.env`, and start services via `docker-compose`.
 
-## Phase 2: The "Minimal Modification" Strategy
+## Phase 2: The "Agent as a Colleague" Strategy
 
-We map Event Planning concepts to Plane's existing architecture and build a lightweight AI "Sidecar" agent.
+We map Event Planning concepts to Plane's existing architecture. Instead of modifying Plane, we introduce the AI as a standard Plane user ("Colleague") via a lightweight Sidecar service.
 
 ### 1. Concept Mapping (Data Model)
 *   **Plane Workspace** = Your overarching agency or account.
@@ -21,12 +21,10 @@ We map Event Planning concepts to Plane's existing architecture and build a ligh
 *   **Plane Modules/Cycles** = Phases of the Event Timeline (e.g., "Phase 1: Venue Setup").
 *   **Plane Gantt/Calendar Views** = The Timeline Engine for the event.
 
-### 2. The AI Event Agent (Sidecar Service)
-We will build a small service (e.g., Python/FastAPI) that interacts with Plane via webhooks and its REST API.
-
-*   **Trigger:** Plane sends a webhook to the Agent when a new Project (Event) is created with a description.
-*   **Intelligence:** The Agent queries an LLM (e.g., Gemini) to generate a structured timeline and task list based on the event description.
-*   **Action:** The Agent uses the Plane REST API to populate the project with Issues, set due dates, group into Modules, and assign priorities.
+### 2. The AI Identity & Interaction
+The AI is invited to the Workspace as a standard user (e.g., `ai@domain.com`) with its own API Token.
+*   **Dynamic Templates:** When a new Project is created, Plane sends a webhook to the Sidecar. The Agent queries an LLM to generate a structured timeline/task list and populates the project using its API token.
+*   **Interactive Mentions:** The Agent listens for `issue_comment.created` webhooks. If `@mentioned`, the Agent reads the context and posts a reply comment directly in the UI.
 
 ### 3. Minimal UI Tweaks (Optional/Later Phase)
 If terminology needs changing (e.g., "Issues" -> "Tasks"):
