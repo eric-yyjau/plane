@@ -34,6 +34,7 @@ To run this built-in AI version, you need to compile a custom Docker image of th
 
 1.  **Set the API Key:** Ensure your `.env` file (or `plane.env` on the server) contains:
     `GEMINI_API_KEY="your_api_key_here"`
+    *Crucial Step: You must edit `docker-compose.yml` to explicitly pass this variable into the backend containers. Under `x-app-env: &app-env`, add `GEMINI_API_KEY: ${GEMINI_API_KEY}`.*
 2.  **Build the Custom Image:**
     On the server, clone your fork and build the backend image from source:
     ```bash
