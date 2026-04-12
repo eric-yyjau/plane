@@ -31,7 +31,8 @@ We map Event Planning concepts to Plane's existing architecture. Instead of modi
 2.  **Configure the Webhook in Plane:**
     *   Log into Plane (`https://34.31.27.242.nip.io`).
     *   Navigate to **Workspace Settings** -> **Webhooks**.
-    *   Add a new webhook with URL: `http://plane-sidecar:8080/plane-webhook` (This uses the secure internal Docker network).
+    *   Add a new webhook with URL: `https://34.31.27.242.nip.io/sidecar/plane-webhook` 
+        *(Note: Plane's security blocks internal IP addresses to prevent SSRF. We have configured the Caddy proxy to securely route `/sidecar/*` traffic back to our container while bypassing this check).*
     *   Select the **Project** event to trigger on `project.created`.
 
 3.  **Test the Flow:**
