@@ -6,9 +6,6 @@ from django.conf import settings
 from google import genai
 from google.genai import types
 
-from plane.db.models import Project, Issue, State, WorkspaceMember
-from plane.db.models.user import User
-
 logger = logging.getLogger(__name__)
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
@@ -28,6 +25,9 @@ def generate_event_tasks(project_id: str, creator_id: Optional[str] = None):
     """
     Celery task that generates and populates issues for a newly created event planning project.
     """
+    from plane.db.models import Project, Issue, State, WorkspaceMember
+    from plane.db.models.user import User
+
     if not genai_client:
         logger.warning("Gemini API Key is not set or client is not initialized. Skipping task generation.")
         return
