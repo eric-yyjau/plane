@@ -10,50 +10,43 @@ The standard, self-hosted Docker version of Plane is successfully deployed on a 
 2.  **Plane Setup:** Plane v1.3.0 is running via Docker Compose.
 3.  **Security:** Configured Caddy (Plane's proxy) to use Let's Encrypt for automatic HTTPS via `nip.io` (Domain: `https://34.31.27.242.nip.io`).
 
-## Phase 2: The "Agent as a Colleague" Strategy (In Progress)
+## Phase 2: The "Built-In Native" Strategy (Current Architecture)
 
-We map Event Planning concepts to Plane's existing architecture. Instead of modifying Plane, we introduce the AI as a standard Plane user ("Colleague") via a lightweight Sidecar service.
+Based on feedback, we have migrated away from a webhook-based "Sidecar" service in favor of a **deeply integrated, built-in architecture**. We have hard-forked the Plane backend to natively handle Event Planning AI tasks.
 
-### Current Status
-*   **The Sidecar Service:** A FastAPI Python app is built (`agent-sidecar/`) and deployed as a Docker container (`plane-sidecar`) directly on the GCP instance, sharing Plane's internal Docker network (`plane-app_default`).
-*   **Dynamic Templates (Implemented):** The sidecar listens for the `project.created` webhook, queries Google Gemini (v2.5 Flash), and dynamically generates tasks, pushing them back into the Plane project via the REST API.
+### Advantages of the Built-In Architecture
+*   **No Webhooks:** Eliminates the need for external proxy routing, SSRF workarounds, and network latency.
+*   **Django Native:** Uses Django's `post_save` signals to instantly detect when an Event Project is created.
+*   **Celery Async Tasks:** Pushes Gemini API calls to Plane's existing background worker queues so the UI never hangs while waiting for the LLM to generate the event plan.
+*   **Direct Database Access:** Populates Tasks (Issues) using the native Django ORM (`Issue.objects.bulk_create()`), avoiding REST API rate limits and authentication hurdles.
 
-### Setup Instructions for Testing
+### Current Implementation Details
+*   **Dependency Added:** Added `google-genai` to `apps/api/requirements.txt`.
+*   **The Signal Hook:** Modified `apps/api/plane/db/models/project.py` to trigger a `post_save` signal whenever a new project with a description is created.
+*   **The Celery Task:** Created `apps/api/plane/bgtasks/ai_agent/event_tasks.py` which:
+    1. Reads the new Project Name and Description.
+    2. Prompts `gemini-2.5-flash` to act as an expert Event Planner and output a structured JSON plan of the 5 most critical tasks.
+    3. Maps those tasks directly into the `Issue` model and saves them to the database.
 
-1.  **Add Gemini Key to Server:**
-    SSH into the GCP instance and add your Gemini key to the sidecar's environment file:
+### Setup Instructions for Testing (Native Mode)
+
+To run this built-in AI version, you need to compile a custom Docker image of the backend and deploy it to your GCP instance.
+
+1.  **Set the API Key:** Ensure your `.env` file (or `plane.env` on the server) contains:
+    `GEMINI_API_KEY="your_api_key_here"`
+2.  **Build the Custom Image:**
+    On the server, clone your fork and build the backend image from source:
     ```bash
-    gcloud compute ssh --zone "us-central1-a" "instance-openclaw-cloud-1" --project "openclaw-cloud-489305" --command="nano ~/agent-sidecar/.env"
+    docker build -t makeplane/plane-backend:custom -f apps/api/Dockerfile.api .
     ```
-    Add: `GEMINI_API_KEY=your_actual_key_here`
-    Restart the sidecar: `sudo docker restart plane-sidecar`
+3.  **Update Deployment:**
+    Modify the `docker-compose.yml` to point the `api`, `worker`, and `beat-worker` services to your new `makeplane/plane-backend:custom` image.
+4.  **Restart Services:**
+    ```bash
+    docker-compose up -d
+    ```
 
-2.  **Configure the Webhook in Plane:**
-    *   Log into Plane (`https://34.31.27.242.nip.io`).
-    *   Navigate to **Workspace Settings** -> **Webhooks**.
-    *   Add a new webhook with URL: `https://34.31.27.242.nip.io/sidecar/plane-webhook` 
-        *(Note: Plane's security blocks internal IP addresses to prevent SSRF. We have configured the Caddy proxy to securely route `/sidecar/*` traffic back to our container while bypassing this check).*
-    *   Select the **Project** event to trigger on `project.created`.
-
-3.  **Test the Flow:**
-    Create a new Project in Plane (e.g., "Annual Tech Summit") and write a descriptive summary. The AI Colleague should automatically populate the project with issues!
-
-### 1. Concept Mapping (Data Model)
-*   **Plane Workspace** = Your overarching agency or account.
-*   **Plane Project** = The specific Event (e.g., "Company Retreat 2026").
-*   **Plane Issues** = Event Tasks (e.g., "Book caterer", "Send invites").
-*   **Plane Modules/Cycles** = Phases of the Event Timeline (e.g., "Phase 1: Venue Setup").
-*   **Plane Gantt/Calendar Views** = The Timeline Engine for the event.
-
-### 2. The AI Identity & Interaction
-The AI is invited to the Workspace as a standard user (e.g., `ai@domain.com`) with its own API Token.
-*   **Dynamic Templates:** When a new Project is created, Plane sends a webhook to the Sidecar. The Agent queries an LLM to generate a structured timeline/task list and populates the project using its API token.
-*   **Interactive Mentions:** The Agent listens for `issue_comment.created` webhooks. If `@mentioned`, the Agent reads the context and posts a reply comment directly in the UI.
-
-### 3. Minimal UI Tweaks (Optional/Later Phase)
-If terminology needs changing (e.g., "Issues" -> "Tasks"):
-*   Modify Plane's frontend translation/locale files.
-*   Configure default views to favor Gantt/Calendar over standard Lists.
+When you create a project in the UI, the built-in Celery worker will now seamlessly pick up the event and populate the tasks!
 
 ## Implementation Steps
 

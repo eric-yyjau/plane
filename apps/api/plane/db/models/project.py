@@ -371,3 +371,12 @@ class ProjectUserProperty(ProjectBaseModel):
     def __str__(self):
         """Return properties status of the project"""
         return str(self.user)
+
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+from plane.bgtasks.ai_agent.event_tasks import generate_event_tasks
+
+@receiver(post_save, sender=Project)
+def project_post_save(sender, instance, created, **kwargs):
+    if created and instance.description:
+        generate_event_tasks.delay(str(instance.id), str(instance.created_by_id) if instance.created_by_id else None)
