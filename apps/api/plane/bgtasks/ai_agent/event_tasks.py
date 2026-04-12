@@ -82,24 +82,21 @@ def generate_event_tasks(project_id: str, creator_id: Optional[str] = None):
         if creator_id:
              created_by = User.objects.filter(id=creator_id).first()
 
-        issues_to_create = []
         for index, task in enumerate(tasks_data):
-            issues_to_create.append(
-                Issue(
-                    workspace_id=project.workspace_id,
-                    project=project,
-                    name=task.get("name", "Untitled Task")[:255],
-                    description_html=f"<p>{task.get('description', '')}</p>",
-                    state=state,
-                    sort_order=index * 10000,
-                    created_by=created_by,
-                    updated_by=created_by
-                )
+            issue = Issue(
+                workspace_id=project.workspace_id,
+                project=project,
+                name=task.get("name", "Untitled Task")[:255],
+                description_html=f"<p>{task.get('description', '')}</p>",
+                state=state,
+                sort_order=index * 10000,
+                created_by=created_by,
+                updated_by=created_by
             )
+            # MUST call save() individually so Plane's custom logic handles sequence IDs and Editor JSON formatting
+            issue.save()
             
-        if issues_to_create:
-            Issue.objects.bulk_create(issues_to_create)
-            logger.info(f"Successfully generated and inserted {len(issues_to_create)} issues into Project: {project.name}")
+        logger.info(f"Successfully generated and inserted {len(tasks_data)} issues into Project: {project.name}")
 
     except Project.DoesNotExist:
          logger.error(f"Project with ID {project_id} does not exist.")
