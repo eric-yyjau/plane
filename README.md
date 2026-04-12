@@ -1,3 +1,11 @@
+# 🤖 Event Planning AI Agent (Powered by Plane)
+
+This is a specialized fork of [Plane](https://plane.so), customized to act as the UI and Database engine for an autonomous Event Planning AI Agent.
+
+For the full architectural plan and instructions on how to set up the AI Sidecar service, please see the [**IMPLEMENTATION_PLAN.md**](./IMPLEMENTATION_PLAN.md).
+
+---
+
 <br /><br />
 
 <p align="center">
