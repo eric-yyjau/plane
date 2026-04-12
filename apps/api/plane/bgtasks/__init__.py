@@ -3,3 +3,4 @@
 # See the LICENSE file for details.
 
 from .ai_agent.event_tasks import generate_event_tasks
+from .ai_agent.agent_worker import process_issue_assignment, process_issue_comment

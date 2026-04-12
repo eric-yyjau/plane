@@ -28,13 +28,31 @@ Based on feedback, we have migrated away from a webhook-based "Sidecar" service 
     2. Prompts `gemini-2.5-flash` to act as an expert Event Planner and output a structured JSON plan of the 5 most critical tasks.
     3. Maps those tasks directly into the `Issue` model and saves them to the database.
 
+## Phase 3: Agent Interaction Modes (Current Phase)
+
+We are implementing dual modes of interaction based on the `AGENT_INTERACTION_REQUIREMENTS.md`.
+
+### Mode 1: Ticket-Based Assignment (The "Asynchronous Colleague") - **IMPLEMENTED**
+The AI agent now operates as a standard team member within Plane.
+
+*   **Assignment Trigger:** When a Plane Issue is assigned to the AI's account (e.g., `agent@ai.local`), a `post_save` signal on the `IssueAssignee` model fires.
+*   **Mention Trigger:** When the AI is `@mentioned` in a comment or a comment is added to an issue the AI owns, a `post_save` signal on the `IssueComment` model fires.
+*   **Execution:** A Celery task (`agent_worker.py`) wakes up, reads the issue context (title, description, conversation history), and uses Gemini to decide the next action. It then posts an HTML-formatted comment back to the issue and can update the issue state to "In Progress".
+
 ### Setup Instructions for Testing (Native Mode)
 
 To run this built-in AI version, you need to compile a custom Docker image of the backend and deploy it to your GCP instance.
 
-1.  **Set the API Key:** Ensure your `.env` file (or `plane.env` on the server) contains:
-    `GEMINI_API_KEY="your_api_key_here"`
-    *Crucial Step: You must edit `docker-compose.yml` to explicitly pass this variable into the backend containers. Under `x-app-env: &app-env`, add `GEMINI_API_KEY: ${GEMINI_API_KEY}`.*
+1.  **Set the Environment Variables:** Ensure your `.env` file (or `plane.env` on the server) contains:
+    ```env
+    GEMINI_API_KEY="your_api_key_here"
+    AGENT_EMAIL="agent@ai.local" # Or whatever email you invite the agent user with
+    ```
+    *Crucial Step: You must edit `docker-compose.yml` to explicitly pass these variables into the backend containers. Under `x-app-env: &app-env`, add:*
+    ```yaml
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      AGENT_EMAIL: ${AGENT_EMAIL:-agent@ai.local}
+    ```
 2.  **Build the Custom Image:**
     On the server, clone your fork and build the backend image from source:
     ```bash

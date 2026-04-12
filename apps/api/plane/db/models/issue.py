@@ -810,3 +810,17 @@ class IssueDescriptionVersion(ProjectBaseModel):
         except Exception as e:
             log_exception(e)
             return False
+
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+from plane.bgtasks.ai_agent.agent_worker import process_issue_assignment, process_issue_comment
+
+@receiver(post_save, sender=IssueAssignee)
+def issue_assignee_post_save(sender, instance, created, **kwargs):
+    if created:
+        process_issue_assignment.delay(str(instance.issue_id), str(instance.assignee_id))
+
+@receiver(post_save, sender=IssueComment)
+def issue_comment_post_save(sender, instance, created, **kwargs):
+    if created and instance.actor_id:
+        process_issue_comment.delay(str(instance.id))
