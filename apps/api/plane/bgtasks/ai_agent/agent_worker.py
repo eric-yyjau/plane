@@ -302,4 +302,47 @@ def poll_agent_email_replies():
                 logger.warning(f"Received email for unknown issue {project_identifier}-{sequence_id}")
                 pass
         else:
-            logger.info(f"Ignored unread email with no issue tag: {subject}")
+            routed = False
+            if genai_client:
+                logger.info("Attempting context-based email routing via Gemini.")
+                recent_issues = Issue.objects.filter(workspace__isnull=False, state__group__in=['backlog', 'unstarted', 'started']).order_by('-updated_at')[:20]
+                issue_list_text = "\n".join([f"ID: {issue.id} | Project: {issue.project.identifier}-{issue.sequence_id} | Title: {issue.name}" for issue in recent_issues])
+                
+                prompt = f"""
+                You are an AI assistant helping to route incoming emails to the correct project management ticket.
+                
+                Incoming Email:
+                From: {sender}
+                Subject: {subject}
+                Body: {body}
+                
+                Recent Active Tickets:
+                {issue_list_text}
+                
+                Which Ticket ID does this email belong to based on the context? 
+                Respond with ONLY the exact UUID of the ticket. If none match, respond with 'NONE'.
+                """
+                try:
+                    response = genai_client.models.generate_content(
+                        model='gemini-2.5-flash',
+                        contents=prompt,
+                    )
+                    issue_id_match = response.text.strip()
+                    if issue_id_match and issue_id_match != 'NONE':
+                        import uuid
+                        try:
+                            valid_uuid = uuid.UUID(issue_id_match)
+                            issue = Issue.objects.get(id=valid_uuid)
+                            
+                            reply_text = f"**New Email Reply from {sender} (Auto-Routed):**\n\n**Subject:** {subject}\n\n{body}"
+                            comment = create_issue_comment_with_activities(issue, agent_user, reply_text)
+                            logger.info(f"Agent intelligently routed email to Issue: {issue.name}")
+                            process_issue_comment.delay(str(comment.id), is_external_reply=True)
+                            routed = True
+                        except (ValueError, Issue.DoesNotExist):
+                            logger.warning(f"LLM returned invalid or unknown Issue ID: {issue_id_match}")
+                except Exception as e:
+                    logger.error(f"Failed to use LLM for email routing: {e}")
+
+            if not routed:
+                logger.info(f"Ignored unread email with no issue tag and no LLM match: {subject}")
