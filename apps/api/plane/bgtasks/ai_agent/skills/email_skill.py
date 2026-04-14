@@ -69,10 +69,10 @@ def check_unread_replies() -> list:
                     if msg.is_multipart():
                         for part in msg.walk():
                             if part.get_content_type() == "text/plain":
-                                body = part.get_payload(decode=True).decode()
+                                body = part.get_payload(decode=True).decode('utf-8', errors='replace')
                                 break
                     else:
-                        body = msg.get_payload(decode=True).decode()
+                        body = msg.get_payload(decode=True).decode('utf-8', errors='replace')
                     
                     replies.append({"from": sender, "subject": subject, "body": body})
                     print(f"📩 Read email from {sender}: {subject}")
