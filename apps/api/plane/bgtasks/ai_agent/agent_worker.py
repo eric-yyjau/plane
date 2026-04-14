@@ -132,7 +132,7 @@ def process_issue_assignment(issue_id: str, assignee_id: str):
         logger.error(f"Agent failed to process assignment: {e}")
 
 @shared_task
-def process_issue_comment(comment_id: str):
+def process_issue_comment(comment_id: str, is_external_reply: bool = False):
     """
     Triggered when a comment is posted on an Issue.
     Checks if the comment mentions the Agent or if the Agent is assigned to the Issue.
@@ -147,15 +147,17 @@ def process_issue_comment(comment_id: str):
     try:
         comment = IssueComment.objects.select_related('issue').get(id=comment_id)
         
-        # Ignore our own comments to prevent infinite loops
-        if comment.actor_id == agent_user.id:
-            return
+        # If this was explicitly marked as an external reply, skip the loop checks
+        if not is_external_reply:
+            # Ignore our own comments to prevent infinite loops
+            if comment.actor_id == agent_user.id:
+                return
 
-        is_assigned = IssueAssignee.objects.filter(issue=comment.issue, assignee=agent_user).exists()
-        is_mentioned = "agent@ai.local" in comment.comment_stripped.lower() or "agent" in comment.comment_stripped.lower()
-        
-        if not (is_assigned or is_mentioned):
-            return
+            is_assigned = IssueAssignee.objects.filter(issue=comment.issue, assignee=agent_user).exists()
+            is_mentioned = "agent@ai.local" in comment.comment_stripped.lower() or "agent" in comment.comment_stripped.lower()
+            
+            if not (is_assigned or is_mentioned):
+                return
 
         logger.info(f"Agent pinged in comment on Issue: {comment.issue.name}")
 
@@ -209,6 +211,10 @@ def process_issue_comment(comment_id: str):
                     try:
                         # Dynamically call the python function mapped to the tool name
                         if tool_name == "send_email":
+                            # Ensure the subject includes the issue identifier so replies can be matched
+                            issue_tag = f"[{comment.issue.project.identifier}-{comment.issue.sequence_id}]"
+                            if "subject" in tool_args and issue_tag not in tool_args["subject"]:
+                                tool_args["subject"] = f"{issue_tag} {tool_args['subject']}"
                             result = send_email(**tool_args)
                         elif tool_name == "check_unread_replies":
                             result = check_unread_replies(**tool_args)
@@ -244,3 +250,56 @@ def process_issue_comment(comment_id: str):
         logger.error(f"Comment {comment_id} not found.")
     except Exception as e:
         logger.error(f"Agent failed to process comment: {e}")
+
+@shared_task
+def poll_agent_email_replies():
+    """
+    Periodically checks the AI Agent's inbox for new replies.
+    If an email contains an issue identifier (e.g., [PROJ-123]) in the subject,
+    it adds the email body as a comment to that issue and triggers the agent to respond.
+    """
+    from plane.db.models import Issue
+    from plane.bgtasks.ai_agent.skills.email_skill import check_unread_replies
+    import re
+    
+    agent_user = get_agent_user()
+    if not agent_user:
+        return
+        
+    replies = check_unread_replies()
+    if not replies:
+        return
+        
+    for reply in replies:
+        subject = reply.get("subject", "")
+        sender = reply.get("from", "")
+        body = reply.get("body", "")
+        
+        # Look for [PROJ-123] pattern in the subject
+        match = re.search(r'\[([A-Z0-9a-zA-Z]+)-(\d+)\]', subject)
+        if match:
+            project_identifier = match.group(1)
+            sequence_id = match.group(2)
+            
+            try:
+                issue = Issue.objects.get(
+                    project__identifier=project_identifier,
+                    sequence_id=sequence_id,
+                    workspace__isnull=False
+                )
+                
+                reply_text = f"**New Email Reply from {sender}:**\n\n**Subject:** {subject}\n\n{body}"
+                
+                # Add it as a comment from the agent
+                comment = create_issue_comment_with_activities(issue, agent_user, reply_text)
+                
+                logger.info(f"Agent logged a new email reply for Issue: {project_identifier}-{sequence_id}")
+                
+                # Make the agent evaluate the new reply autonomously
+                process_issue_comment.delay(str(comment.id), is_external_reply=True)
+                
+            except Issue.DoesNotExist:
+                logger.warning(f"Received email for unknown issue {project_identifier}-{sequence_id}")
+                pass
+        else:
+            logger.info(f"Ignored unread email with no issue tag: {subject}")
