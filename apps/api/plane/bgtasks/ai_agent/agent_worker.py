@@ -135,14 +135,67 @@ def process_issue_comment(comment_id: str):
         {history}
         
         The last comment was directed at you or an issue you own. Respond appropriately to the conversation.
-        Provide your response in basic HTML format (e.g., <p>, <strong>).
+        If you need to contact someone, search for a vendor, or send an email, use your available tools.
+        If you use a tool, wait for the result and then summarize the outcome to the user.
+        Always provide your final response to the user in basic HTML format (e.g., <p>, <strong>).
         """
         
         if genai_client:
-            response = genai_client.models.generate_content(
+            from .skills.email_skill import send_email, check_unread_replies
+            from .skills.call_skill import initiate_phone_call, search_vendor_info
+            
+            tools = [send_email, check_unread_replies, initiate_phone_call, search_vendor_info]
+            
+            # Start a chat session to handle multi-turn tool calling
+            chat = genai_client.chats.create(
                 model='gemini-2.5-flash',
-                contents=prompt,
+                config=types.GenerateContentConfig(
+                    tools=tools,
+                    temperature=0.7,
+                )
             )
+            
+            # Send the initial prompt
+            response = chat.send_message(prompt)
+            
+            # If Gemini decides to call a tool, we need to execute it and return the result
+            while response.function_calls:
+                for function_call in response.function_calls:
+                    tool_name = function_call.name
+                    tool_args = function_call.args
+                    
+                    logger.info(f"Agent invoked tool: {tool_name} with args: {tool_args}")
+                    
+                    try:
+                        # Dynamically call the python function mapped to the tool name
+                        if tool_name == "send_email":
+                            result = send_email(**tool_args)
+                        elif tool_name == "check_unread_replies":
+                            result = check_unread_replies(**tool_args)
+                        elif tool_name == "initiate_phone_call":
+                            result = initiate_phone_call(**tool_args)
+                        elif tool_name == "search_vendor_info":
+                            result = search_vendor_info(**tool_args)
+                        else:
+                            result = f"Error: Tool {tool_name} not found."
+                            
+                        # Send the tool result back to Gemini so it can continue reasoning
+                        logger.info(f"Tool {tool_name} returned: {result}")
+                        response = chat.send_message(
+                            types.Part.from_function_response(
+                                name=tool_name,
+                                response={"result": result}
+                            )
+                        )
+                    except Exception as tool_e:
+                        logger.error(f"Error executing tool {tool_name}: {tool_e}")
+                        response = chat.send_message(
+                            types.Part.from_function_response(
+                                name=tool_name,
+                                response={"error": str(tool_e)}
+                            )
+                        )
+            
             reply_text = response.text.replace('```html', '').replace('```', '').strip()
             
             IssueComment.objects.create(
