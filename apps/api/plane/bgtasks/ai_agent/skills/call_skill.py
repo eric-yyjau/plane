@@ -1,9 +1,5 @@
 import os
 import requests
-from dotenv import load_dotenv
-
-# Load local environment variables for testing
-load_dotenv()
 
 # Setup instructions:
 # Option 1: Use Twilio (Requires Account SID and Auth Token)

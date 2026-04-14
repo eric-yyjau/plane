@@ -4,10 +4,6 @@ import email
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import os
-from dotenv import load_dotenv
-
-# Load local environment variables for testing
-load_dotenv()
 
 # Setup instructions:
 # 1. Go to your Google Account -> Security -> 2-Step Verification
