@@ -24,6 +24,55 @@ def get_agent_user():
     from plane.db.models.user import User
     return User.objects.filter(email=AGENT_EMAIL).first()
 
+
+def create_issue_comment_with_activities(issue, agent_user, reply_text):
+    from plane.db.models import IssueComment
+    from plane.bgtasks.issue_activities_task import issue_activity
+    from plane.bgtasks.webhook_task import model_activity
+    from plane.api.serializers import IssueCommentSerializer
+    import json
+    from django.core.serializers.json import DjangoJSONEncoder
+    from django.utils import timezone
+    
+    comment_html = f"<div>{reply_text}</div>"
+    
+    new_comment = IssueComment.objects.create(
+        workspace_id=issue.workspace_id,
+        project_id=issue.project_id,
+        issue=issue,
+        actor=agent_user,
+        comment_html=comment_html,
+        comment_stripped=reply_text,
+        created_by=agent_user,
+        updated_by=agent_user
+    )
+    
+    serializer_data = IssueCommentSerializer(new_comment).data
+    requested_data = {"comment_html": comment_html}
+    
+    issue_activity.delay(
+        type="comment.activity.created",
+        requested_data=json.dumps(serializer_data, cls=DjangoJSONEncoder),
+        actor_id=str(agent_user.id),
+        issue_id=str(issue.id),
+        project_id=str(issue.project_id),
+        current_instance=None,
+        epoch=int(timezone.now().timestamp()),
+    )
+
+    model_activity.delay(
+        model_name="issue_comment",
+        model_id=str(new_comment.id),
+        requested_data=requested_data,
+        current_instance=None,
+        actor_id=agent_user.id,
+        slug=issue.workspace.slug,
+        origin=""
+    )
+    return new_comment
+
+
+
 @shared_task
 def process_issue_assignment(issue_id: str, assignee_id: str):
     """
@@ -67,16 +116,7 @@ def process_issue_assignment(issue_id: str, assignee_id: str):
         reply_text = response.text.replace('```html', '').replace('```', '').strip()
         
         # 2. Post a comment back to the Issue
-        IssueComment.objects.create(
-            workspace_id=issue.workspace_id,
-            project_id=issue.project_id,
-            issue=issue,
-            actor=agent_user,
-            comment_html=f"<div>{reply_text}</div>",
-            comment_stripped=reply_text,
-            created_by=agent_user,
-            updated_by=agent_user
-        )
+        create_issue_comment_with_activities(issue, agent_user, reply_text)
         
         # 3. Update the Issue State to "In Progress" if it's in Todo
         in_progress_state = State.objects.filter(project_id=issue.project_id, group='started').first()
@@ -198,16 +238,7 @@ def process_issue_comment(comment_id: str):
             
             reply_text = response.text.replace('```html', '').replace('```', '').strip()
             
-            IssueComment.objects.create(
-                workspace_id=comment.workspace_id,
-                project_id=comment.project_id,
-                issue=comment.issue,
-                actor=agent_user,
-                comment_html=f"<div>{reply_text}</div>",
-                comment_stripped=reply_text,
-                created_by=agent_user,
-                updated_by=agent_user
-            )
+            create_issue_comment_with_activities(comment.issue, agent_user, reply_text)
 
     except IssueComment.DoesNotExist:
         logger.error(f"Comment {comment_id} not found.")
