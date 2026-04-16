@@ -14,10 +14,10 @@ import { CustomMenu } from "@plane/ui";
 // components
 import { ProductUpdatesModal } from "@/components/global";
 import { AppSidebarItem } from "@/components/sidebar/sidebar-item";
-import { AIAssistantModal } from "./ai-assistant-modal";
 // hooks
 import { usePowerK } from "@/hooks/store/use-power-k";
 import { useChatSupport } from "@/hooks/use-chat-support";
+import { useAppTheme } from "@/hooks/store/use-app-theme";
 // plane web components
 import { PlaneVersionNumber } from "@/plane-web/components/global";
 
@@ -26,15 +26,14 @@ export const HelpMenuRoot = observer(function HelpMenuRoot() {
   const { t } = useTranslation();
   const { toggleShortcutsListModal } = usePowerK();
   const { openChatSupport, isEnabled: isChatSupportEnabled } = useChatSupport();
+  const { toggleAIAssistantSidebar } = useAppTheme();
   // states
   const [isNeedHelpOpen, setIsNeedHelpOpen] = useState(false);
   const [isProductUpdatesModalOpen, setProductUpdatesModalOpen] = useState(false);
-  const [isAIAssistantOpen, setIsAIAssistantOpen] = useState(false);
 
   return (
     <>
       <ProductUpdatesModal isOpen={isProductUpdatesModalOpen} handleClose={() => setProductUpdatesModalOpen(false)} />
-      <AIAssistantModal isOpen={isAIAssistantOpen} onClose={() => setIsAIAssistantOpen(false)} />
 
       <CustomMenu
         customButton={
@@ -74,7 +73,7 @@ export const HelpMenuRoot = observer(function HelpMenuRoot() {
         <CustomMenu.MenuItem>
           <button
             type="button"
-            onClick={() => setIsAIAssistantOpen(true)}
+            onClick={() => toggleAIAssistantSidebar(false)}
             className="flex w-full items-center gap-x-2 rounded-sm text-11 hover:bg-layer-1"
           >
             <Bot className="h-3.5 w-3.5 text-secondary" />

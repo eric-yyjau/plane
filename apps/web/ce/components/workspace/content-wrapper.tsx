@@ -12,6 +12,7 @@ import { AppRailRoot } from "@/components/navigation";
 import { useAppRailVisibility } from "@/lib/app-rail";
 // local imports
 import { TopNavigationRoot } from "../navigations";
+import { AIAssistantSidebar } from "@/components/workspace/sidebar/help-section/ai-assistant-sidebar";
 
 export const WorkspaceContentWrapper = observer(function WorkspaceContentWrapper({
   children,
@@ -29,13 +30,14 @@ export const WorkspaceContentWrapper = observer(function WorkspaceContentWrapper
         {shouldRenderAppRail && <AppRailRoot />}
         <div
           className={cn(
-            "relative size-full flex-grow overflow-hidden pr-2 pb-2 pl-2 transition-all duration-300 ease-in-out",
+            "relative flex size-full flex-grow flex-row overflow-hidden pr-2 pb-2 pl-2 transition-all duration-300 ease-in-out",
             {
               "pl-0!": shouldRenderAppRail,
             }
           )}
         >
-          {children}
+          <div className="relative h-full flex-1 overflow-hidden">{children}</div>
+          <AIAssistantSidebar />
         </div>
       </div>
     </div>

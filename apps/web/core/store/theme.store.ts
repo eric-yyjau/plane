@@ -19,6 +19,7 @@ export interface IThemeStore {
   epicDetailSidebarCollapsed: boolean | undefined;
   initiativesSidebarCollapsed: boolean | undefined;
   projectOverviewSidebarCollapsed: boolean | undefined;
+  aiAssistantSidebarCollapsed: boolean | undefined;
   // actions
   toggleAnySidebarDropdown: (open?: boolean) => void;
   toggleSidebar: (collapsed?: boolean) => void;
@@ -31,6 +32,7 @@ export interface IThemeStore {
   toggleEpicDetailSidebar: (collapsed?: boolean) => void;
   toggleInitiativesSidebar: (collapsed?: boolean) => void;
   toggleProjectOverviewSidebar: (collapsed?: boolean) => void;
+  toggleAIAssistantSidebar: (collapsed?: boolean) => void;
 }
 
 export class ThemeStore implements IThemeStore {
@@ -46,6 +48,7 @@ export class ThemeStore implements IThemeStore {
   epicDetailSidebarCollapsed: boolean | undefined = undefined;
   initiativesSidebarCollapsed: boolean | undefined = undefined;
   projectOverviewSidebarCollapsed: boolean | undefined = undefined;
+  aiAssistantSidebarCollapsed: boolean | undefined = undefined;
 
   constructor() {
     makeObservable(this, {
@@ -61,6 +64,7 @@ export class ThemeStore implements IThemeStore {
       epicDetailSidebarCollapsed: observable.ref,
       initiativesSidebarCollapsed: observable.ref,
       projectOverviewSidebarCollapsed: observable.ref,
+      aiAssistantSidebarCollapsed: observable.ref,
       // action
       toggleAnySidebarDropdown: action,
       toggleSidebar: action,
@@ -73,7 +77,15 @@ export class ThemeStore implements IThemeStore {
       toggleEpicDetailSidebar: action,
       toggleInitiativesSidebar: action,
       toggleProjectOverviewSidebar: action,
+      toggleAIAssistantSidebar: action,
     });
+
+    if (typeof window !== "undefined") {
+      const aiSidebarCollapsed = localStorage.getItem("ai_assistant_sidebar_collapsed");
+      this.aiAssistantSidebarCollapsed = aiSidebarCollapsed ? aiSidebarCollapsed === "true" : true;
+    } else {
+      this.aiAssistantSidebarCollapsed = true;
+    }
   }
 
   toggleAnySidebarDropdown = (open?: boolean) => {
@@ -194,5 +206,16 @@ export class ThemeStore implements IThemeStore {
       this.projectOverviewSidebarCollapsed = collapsed;
     }
     localStorage.setItem("project_overview_sidebar_collapsed", this.projectOverviewSidebarCollapsed.toString());
+  };
+
+  toggleAIAssistantSidebar = (collapsed?: boolean) => {
+    if (collapsed === undefined) {
+      this.aiAssistantSidebarCollapsed = !this.aiAssistantSidebarCollapsed;
+    } else {
+      this.aiAssistantSidebarCollapsed = collapsed;
+    }
+    if (typeof window !== "undefined") {
+      localStorage.setItem("ai_assistant_sidebar_collapsed", this.aiAssistantSidebarCollapsed!.toString());
+    }
   };
 }

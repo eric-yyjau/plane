@@ -9,6 +9,7 @@ from typing import List, Dict, Tuple
 
 # Third party import
 from openai import OpenAI
+from google import genai
 import requests
 
 from rest_framework import status
@@ -63,8 +64,8 @@ class AnthropicProvider(LLMProvider):
 
 class GeminiProvider(LLMProvider):
     name = "Gemini"
-    models = ["gemini-pro", "gemini-1.5-pro-latest", "gemini-pro-vision"]
-    default_model = "gemini-pro"
+    models = ["gemini-pro", "gemini-1.5-pro-latest", "gemini-pro-vision", "gemini-1.5-flash", "gemini-2.0-flash-exp"]
+    default_model = "gemini-1.5-flash"
 
 
 SUPPORTED_PROVIDERS = {
@@ -83,11 +84,11 @@ def get_llm_config() -> Tuple[str | None, str | None, str | None]:
         [
             {
                 "key": "LLM_API_KEY",
-                "default": os.environ.get("LLM_API_KEY", None),
+                "default": os.environ.get("LLM_API_KEY", os.environ.get("GEMINI_API_KEY", None)),
             },
             {
                 "key": "LLM_PROVIDER",
-                "default": os.environ.get("LLM_PROVIDER", "openai"),
+                "default": os.environ.get("LLM_PROVIDER", "gemini" if os.environ.get("GEMINI_API_KEY") else "openai"),
             },
             {
                 "key": "LLM_MODEL",
@@ -125,10 +126,15 @@ def get_llm_response(task, prompt, api_key: str, model: str, provider: str) -> T
     """Helper to get LLM completion response"""
     final_text = task + "\n" + prompt
     try:
-        # For Gemini, prepend provider name to model
         if provider.lower() == "gemini":
-            model = f"gemini/{model}"
+            client = genai.Client(api_key=api_key)
+            response = client.models.generate_content(
+                model=model,
+                contents=final_text,
+            )
+            return response.text, None
 
+        # For non-gemini, try OpenAI client
         client = OpenAI(api_key=api_key)
         chat_completion = client.chat.completions.create(
             model=model, messages=[{"role": "user", "content": final_text}]
@@ -144,6 +150,7 @@ def get_llm_response(task, prompt, api_key: str, model: str, provider: str) -> T
             return None, f"Rate limit exceeded for {provider}"
         else:
             return None, f"Error occurred while generating response from {provider}"
+
 
 
 class GPTIntegrationEndpoint(BaseAPIView):
