@@ -64,8 +64,8 @@ class AnthropicProvider(LLMProvider):
 
 class GeminiProvider(LLMProvider):
     name = "Gemini"
-    models = ["gemini-pro", "gemini-1.5-pro-latest", "gemini-pro-vision", "gemini-1.5-flash", "gemini-2.0-flash-exp"]
-    default_model = "gemini-1.5-flash"
+    models = ["gemini-pro", "gemini-1.5-pro-latest", "gemini-pro-vision", "gemini-1.5-flash", "gemini-2.0-flash-exp", "gemini-3"]
+    default_model = "gemini-3"
 
 
 SUPPORTED_PROVIDERS = {
