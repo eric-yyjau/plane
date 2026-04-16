@@ -21,6 +21,21 @@ export type TTaskPayload = {
   task: AI_EDITOR_TASKS;
   text_input: string;
 };
+export type TWorkspaceAIChatMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
+
+export type TWorkspaceAIChatResponse = {
+  reply: string;
+  actions_executed: {
+    type: string;
+    issue_id: string;
+    project_id: string;
+    issue_identifier: string;
+    name: string;
+  }[];
+};
 
 export class AIService extends APIService {
   constructor() {
@@ -43,6 +58,21 @@ export class AIService extends APIService {
   }> {
     return this.post(`/api/workspaces/${workspaceSlug}/rephrase-grammar/`, data)
       .then((res) => res?.data)
+      .catch((error) => {
+        throw error?.response?.data;
+      });
+  }
+
+  async chatWithWorkspaceAssistant(
+    workspaceSlug: string,
+    data: {
+      message: string;
+      history: TWorkspaceAIChatMessage[];
+      project_id?: string;
+    }
+  ): Promise<TWorkspaceAIChatResponse> {
+    return this.post(`/api/workspaces/${workspaceSlug}/ai-chat/`, data)
+      .then((response) => response?.data)
       .catch((error) => {
         throw error?.response?.data;
       });

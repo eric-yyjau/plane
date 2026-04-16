@@ -6,7 +6,7 @@
 
 import React, { useState } from "react";
 import { observer } from "mobx-react";
-import { HelpCircle, MessagesSquare, User } from "lucide-react";
+import { Bot, HelpCircle, MessagesSquare, User } from "lucide-react";
 import { useTranslation } from "@plane/i18n";
 import { PageIcon } from "@plane/propel/icons";
 // ui
@@ -14,6 +14,7 @@ import { CustomMenu } from "@plane/ui";
 // components
 import { ProductUpdatesModal } from "@/components/global";
 import { AppSidebarItem } from "@/components/sidebar/sidebar-item";
+import { AIAssistantModal } from "./ai-assistant-modal";
 // hooks
 import { usePowerK } from "@/hooks/store/use-power-k";
 import { useChatSupport } from "@/hooks/use-chat-support";
@@ -28,10 +29,12 @@ export const HelpMenuRoot = observer(function HelpMenuRoot() {
   // states
   const [isNeedHelpOpen, setIsNeedHelpOpen] = useState(false);
   const [isProductUpdatesModalOpen, setProductUpdatesModalOpen] = useState(false);
+  const [isAIAssistantOpen, setIsAIAssistantOpen] = useState(false);
 
   return (
     <>
       <ProductUpdatesModal isOpen={isProductUpdatesModalOpen} handleClose={() => setProductUpdatesModalOpen(false)} />
+      <AIAssistantModal isOpen={isAIAssistantOpen} onClose={() => setIsAIAssistantOpen(false)} />
 
       <CustomMenu
         customButton={
@@ -68,6 +71,16 @@ export const HelpMenuRoot = observer(function HelpMenuRoot() {
             </button>
           </CustomMenu.MenuItem>
         )}
+        <CustomMenu.MenuItem>
+          <button
+            type="button"
+            onClick={() => setIsAIAssistantOpen(true)}
+            className="flex w-full items-center gap-x-2 rounded-sm text-11 hover:bg-layer-1"
+          >
+            <Bot className="h-3.5 w-3.5 text-secondary" />
+            <span className="text-11">AI Assistant</span>
+          </button>
+        </CustomMenu.MenuItem>
         <CustomMenu.MenuItem onClick={() => window.open("mailto:sales@plane.so", "_blank")}>
           <div className="flex items-center gap-x-2 rounded-sm text-11">
             <User className="h-3.5 w-3.5 text-secondary" size={14} />

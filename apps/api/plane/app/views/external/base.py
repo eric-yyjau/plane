@@ -4,6 +4,7 @@
 
 # Python import
 import os
+import json
 from typing import List, Dict, Tuple
 
 # Third party import
@@ -16,7 +17,7 @@ from rest_framework.response import Response
 # Module import
 from plane.app.permissions import ROLE, allow_permission
 from plane.app.serializers import ProjectLiteSerializer, WorkspaceLiteSerializer
-from plane.db.models import Project, Workspace
+from plane.db.models import Project, Workspace, Issue, State
 from plane.license.utils.instance_value import get_configuration_value
 from plane.utils.exception_logger import log_exception
 
@@ -207,6 +208,183 @@ class WorkspaceGPTIntegrationEndpoint(BaseAPIView):
             {
                 "response": text,
                 "response_html": text.replace("\n", "<br/>"),
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+def _extract_json_object(raw_text: str):
+    normalized = (raw_text or "").strip()
+    if normalized.startswith("```"):
+        normalized = normalized.replace("```json", "").replace("```", "").strip()
+
+    try:
+        return json.loads(normalized)
+    except Exception:
+        start = normalized.find("{")
+        end = normalized.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            try:
+                return json.loads(normalized[start : end + 1])
+            except Exception:
+                return None
+    return None
+
+
+class WorkspaceAIChatEndpoint(BaseAPIView):
+    @allow_permission(allowed_roles=[ROLE.ADMIN, ROLE.MEMBER], level="WORKSPACE")
+    def post(self, request, slug):
+        api_key, model, provider = get_llm_config()
+
+        if not api_key or not model or not provider:
+            return Response(
+                {"error": "LLM provider API key and model are required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        message = request.data.get("message", "").strip()
+        if not message:
+            return Response({"error": "Message is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        project_id = request.data.get("project_id", None)
+        history = request.data.get("history", [])
+
+        workspace = Workspace.objects.filter(slug=slug).first()
+        if not workspace:
+            return Response({"error": "Workspace not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        projects = (
+            Project.objects.filter(
+                workspace__slug=slug,
+                project_projectmember__member=request.user,
+                project_projectmember__is_active=True,
+            )
+            .filter(archived_at__isnull=True)
+            .distinct()
+            .order_by("name")[:15]
+        )
+        project_context = "\n".join([f"- {project.id}: {project.name}" for project in projects])
+
+        history_text = ""
+        if isinstance(history, list):
+            for idx, item in enumerate(history[-10:]):
+                role = item.get("role", "user")
+                content = item.get("content", "")
+                history_text += f"{idx + 1}. {role}: {content}\n"
+
+        task = """
+You are Plane's synchronous AI Assistant for event planning teams.
+You can help users brainstorm and answer workspace/project status questions.
+You may optionally create issues when the user explicitly asks to create tickets/tasks.
+Respond as strict JSON with this shape only:
+{
+  "reply": "assistant response in plain text",
+  "actions": [
+    {
+      "type": "create_issue",
+      "project_id": "uuid",
+      "name": "issue title",
+      "description": "issue description"
+    }
+  ]
+}
+Rules:
+- Keep reply concise and actionable.
+- Only return create_issue actions if user clearly requested creating work items.
+- If creating issues but no project is clear, ask a clarifying question in reply and return empty actions.
+- Maximum 5 create_issue actions.
+"""
+
+        prompt = f"""
+Workspace: {workspace.name} ({workspace.slug})
+Visible projects:
+{project_context if project_context else "- No visible projects found"}
+Current project_id hint from caller: {project_id}
+Recent conversation:
+{history_text if history_text else "(none)"}
+Latest user message:
+{message}
+"""
+
+        text, error = get_llm_response(task, prompt, api_key, model, provider)
+        if not text or error:
+            return Response(
+                {"error": "Failed to generate response"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        parsed = _extract_json_object(text)
+        if not parsed:
+            return Response(
+                {
+                    "reply": text,
+                    "actions_executed": [],
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        reply = (parsed.get("reply") or "").strip() or "I can help with that."
+        actions = parsed.get("actions", [])
+        if not isinstance(actions, list):
+            actions = []
+
+        actions_executed = []
+
+        for action in actions[:5]:
+            if action.get("type") != "create_issue":
+                continue
+
+            action_project_id = action.get("project_id") or project_id
+            if not action_project_id:
+                continue
+
+            project = (
+                Project.objects.filter(
+                    id=action_project_id,
+                    workspace__slug=slug,
+                    project_projectmember__member=request.user,
+                    project_projectmember__is_active=True,
+                )
+                .filter(archived_at__isnull=True)
+                .distinct()
+                .first()
+            )
+            if not project:
+                continue
+
+            issue_name = (action.get("name") or "").strip()
+            if not issue_name:
+                continue
+
+            issue_description = (action.get("description") or "").strip()
+
+            state = State.objects.filter(project_id=project.id, group__in=["backlog", "unstarted"]).first()
+
+            issue = Issue(
+                workspace_id=project.workspace_id,
+                project=project,
+                name=issue_name[:255],
+                description_html=f"<p>{issue_description}</p>" if issue_description else "<p></p>",
+                state=state,
+                created_by=request.user,
+                updated_by=request.user,
+            )
+            issue.save()
+
+            actions_executed.append(
+                {
+                    "type": "create_issue",
+                    "issue_id": str(issue.id),
+                    "project_id": str(project.id),
+                    "issue_identifier": f"{project.identifier}-{issue.sequence_id}",
+                    "name": issue.name,
+                }
+            )
+
+        return Response(
+            {
+                "reply": reply,
+                "actions_executed": actions_executed,
             },
             status=status.HTTP_200_OK,
         )
