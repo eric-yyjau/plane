@@ -15,29 +15,32 @@ The standard, self-hosted Docker version of Plane is successfully deployed on a 
 Based on feedback, we have migrated away from a webhook-based "Sidecar" service in favor of a **deeply integrated, built-in architecture**. We have hard-forked the Plane backend to natively handle Event Planning AI tasks.
 
 ### Advantages of the Built-In Architecture
-*   **No Webhooks:** Eliminates the need for external proxy routing, SSRF workarounds, and network latency.
-*   **Django Native:** Uses Django's `post_save` signals to instantly detect when an Event Project is created.
-*   **Celery Async Tasks:** Pushes Gemini API calls to Plane's existing background worker queues so the UI never hangs while waiting for the LLM to generate the event plan.
-*   **Direct Database Access:** Populates Tasks (Issues) using the native Django ORM (`Issue.objects.bulk_create()`), avoiding REST API rate limits and authentication hurdles.
+
+- **No Webhooks:** Eliminates the need for external proxy routing, SSRF workarounds, and network latency.
+- **Django Native:** Uses Django's `post_save` signals to instantly detect when an Event Project is created.
+- **Celery Async Tasks:** Pushes Gemini API calls to Plane's existing background worker queues so the UI never hangs while waiting for the LLM to generate the event plan.
+- **Direct Database Access:** Populates Tasks (Issues) using the native Django ORM (`Issue.objects.bulk_create()`), avoiding REST API rate limits and authentication hurdles.
 
 ### Current Implementation Details
-*   **Dependency Added:** Added `google-genai` to `apps/api/requirements.txt`.
-*   **The Signal Hook:** Modified `apps/api/plane/db/models/project.py` to trigger a `post_save` signal whenever a new project with a description is created.
-*   **The Celery Task:** Created `apps/api/plane/bgtasks/ai_agent/event_tasks.py` which:
-    1. Reads the new Project Name and Description.
-    2. Prompts `gemini-2.5-flash` to act as an expert Event Planner and output a structured JSON plan of the 5 most critical tasks.
-    3. Maps those tasks directly into the `Issue` model and saves them to the database.
+
+- **Dependency Added:** Added `google-genai` to `apps/api/requirements.txt`.
+- **The Signal Hook:** Modified `apps/api/plane/db/models/project.py` to trigger a `post_save` signal whenever a new project with a description is created.
+- **The Celery Task:** Created `apps/api/plane/bgtasks/ai_agent/event_tasks.py` which:
+  1. Reads the new Project Name and Description.
+  2. Prompts `gemini-2.5-flash` to act as an expert Event Planner and output a structured JSON plan of the 5 most critical tasks.
+  3. Maps those tasks directly into the `Issue` model and saves them to the database.
 
 ## Phase 3: Agent Interaction Modes (Current Phase)
 
 We are implementing dual modes of interaction based on the `AGENT_INTERACTION_REQUIREMENTS.md`.
 
 ### Mode 1: Ticket-Based Assignment (The "Asynchronous Colleague") - **IMPLEMENTED**
+
 The AI agent now operates as a standard team member within Plane.
 
-*   **Assignment Trigger:** When a Plane Issue is assigned to the AI's account (e.g., `agent@ai.local`), a `post_save` signal on the `IssueAssignee` model fires.
-*   **Mention Trigger:** When the AI is `@mentioned` in a comment or a comment is added to an issue the AI owns, a `post_save` signal on the `IssueComment` model fires.
-*   **Execution:** A Celery task (`agent_worker.py`) wakes up, reads the issue context (title, description, conversation history), and uses Gemini to decide the next action. It then posts an HTML-formatted comment back to the issue and can update the issue state to "In Progress".
+- **Assignment Trigger:** When a Plane Issue is assigned to the AI's account (e.g., `agent@ai.local`), a `post_save` signal on the `IssueAssignee` model fires.
+- **Mention Trigger:** When the AI is `@mentioned` in a comment or a comment is added to an issue the AI owns, a `post_save` signal on the `IssueComment` model fires.
+- **Execution:** A Celery task (`agent_worker.py`) wakes up, reads the issue context (title, description, conversation history), and uses Gemini to decide the next action. It then posts an HTML-formatted comment back to the issue and can update the issue state to "In Progress".
 
 ### Setup Instructions for Testing (Native Mode)
 
@@ -48,10 +51,10 @@ To run this built-in AI version, you need to compile a custom Docker image of th
     GEMINI_API_KEY="your_api_key_here"
     AGENT_EMAIL="agent@ai.local" # Or whatever email you invite the agent user with
     ```
-    *Crucial Step: You must edit `docker-compose.yml` to explicitly pass these variables into the backend containers. Under `x-app-env: &app-env`, add:*
+    _Crucial Step: You must edit `docker-compose.yml` to explicitly pass these variables into the backend containers. Under `x-app-env: &app-env`, add:_
     ```yaml
-      GEMINI_API_KEY: ${GEMINI_API_KEY}
-      AGENT_EMAIL: ${AGENT_EMAIL:-agent@ai.local}
+    GEMINI_API_KEY: ${GEMINI_API_KEY}
+    AGENT_EMAIL: ${AGENT_EMAIL:-agent@ai.local}
     ```
 2.  **Build the Custom Image:**
     On the server, clone your fork and build the backend image from source:
@@ -66,6 +69,15 @@ To run this built-in AI version, you need to compile a custom Docker image of th
     ```
 
 When you create a project in the UI, the built-in Celery worker will now seamlessly pick up the event and populate the tasks!
+
+## Phase 4: Google Meet Integration & Summarization (Upcoming)
+
+To streamline meeting workflows, we are extending the AI Agent to process Google Meet transcripts.
+
+1.  **Backend Endpoint:** A new dedicated API endpoint (`/api/workspaces/<slug>/projects/<project_id>/google-meet-summary/`) will be created to accept meeting transcripts.
+2.  **LLM Processing:** The endpoint will use Gemini to analyze the transcript, generate a concise summary, and identify explicit action items.
+3.  **Auto-Issue Creation:** Action items identified by the LLM will be automatically mapped to the Plane `Issue` model and injected into the specified project as new tasks.
+4.  **UI Integration:** The AI Assistant sidebar in the frontend will be updated with a dedicated "Meeting Summary" feature, allowing users to paste transcripts directly into the workspace and immediately see the generated tasks.
 
 ## Implementation Steps
 

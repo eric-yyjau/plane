@@ -397,6 +397,127 @@ Latest user message:
         )
 
 
+class WorkspaceGoogleMeetSummaryEndpoint(BaseAPIView):
+    @allow_permission([ROLE.ADMIN, ROLE.MEMBER])
+    def post(self, request, slug, project_id):
+        api_key, model, provider = get_llm_config()
+
+        if not api_key:
+            return Response(
+                {"error": "AI features are not configured for this instance."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        transcript = request.data.get("transcript")
+        if not transcript:
+            return Response(
+                {"error": "Transcript is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        project = (
+            Project.objects.filter(
+                id=project_id,
+                workspace__slug=slug,
+                project_projectmember__member=request.user,
+                project_projectmember__is_active=True,
+            )
+            .filter(archived_at__isnull=True)
+            .distinct()
+            .first()
+        )
+        if not project:
+            return Response(
+                {"error": "Project not found or you don't have access."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        task = """
+You are an AI assistant for Plane, an event planning and project management tool.
+The user has provided a transcript or notes from a Google Meet session.
+Your task is to:
+1. Summarize the key points of the meeting.
+2. Identify all explicit action items.
+
+Respond as strict JSON with this shape only:
+{
+  "summary": "Detailed summary of the meeting...",
+  "actions": [
+    {
+      "name": "Title of the action item (max 255 chars)",
+      "description": "More context or details about the action item"
+    }
+  ]
+}
+"""
+
+        prompt = f"""
+Transcript/Notes:
+{transcript}
+"""
+
+        text, error = get_llm_response(task, prompt, api_key, model, provider)
+        if not text or error:
+            return Response(
+                {"error": "Failed to generate response"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        parsed = _extract_json_object(text)
+        if not parsed:
+            return Response(
+                {
+                    "summary": "Could not parse the generated summary.",
+                    "actions_executed": [],
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        summary = (parsed.get("summary") or "").strip()
+        actions = parsed.get("actions", [])
+        if not isinstance(actions, list):
+            actions = []
+
+        actions_executed = []
+
+        for action in actions[:10]: # Max 10 tasks to prevent abuse
+            issue_name = (action.get("name") or "").strip()
+            if not issue_name:
+                continue
+
+            issue_description = (action.get("description") or "").strip()
+
+            state = State.objects.filter(project_id=project.id, group__in=["backlog", "unstarted"]).first()
+
+            issue = Issue(
+                workspace_id=project.workspace_id,
+                project=project,
+                name=issue_name[:255],
+                description_html=f"<p>{issue_description}</p>" if issue_description else "<p></p>",
+                state=state,
+                created_by=request.user,
+                updated_by=request.user,
+            )
+            issue.save()
+
+            actions_executed.append(
+                {
+                    "issue_id": str(issue.id),
+                    "project_id": str(project.id),
+                    "issue_identifier": f"{project.identifier}-{issue.sequence_id}",
+                    "name": issue.name,
+                }
+            )
+
+        return Response(
+            {
+                "summary": summary,
+                "actions_executed": actions_executed,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
 class UnsplashEndpoint(BaseAPIView):
     def get(self, request):
         (UNSPLASH_ACCESS_KEY,) = get_configuration_value(

@@ -1,12 +1,13 @@
 # Copyright (c) 2023-present Plane Software, Inc. and contributors
 # SPDX-License-Identifier: AGPL-3.0-only
 # See the LICENSE file for details.
-
-from django.urls import path
-
-
-from plane.app.views import UnsplashEndpoint
-from plane.app.views import GPTIntegrationEndpoint, WorkspaceGPTIntegrationEndpoint, WorkspaceAIChatEndpoint
+from plane.app.views.external import (
+    UnsplashEndpoint,
+    GPTIntegrationEndpoint,
+    WorkspaceGPTIntegrationEndpoint,
+    WorkspaceAIChatEndpoint,
+    WorkspaceGoogleMeetSummaryEndpoint,
+)
 
 
 urlpatterns = [
@@ -25,5 +26,10 @@ urlpatterns = [
         "workspaces/<str:slug>/ai-chat/",
         WorkspaceAIChatEndpoint.as_view(),
         name="workspace-ai-chat",
+    ),
+    path(
+        "workspaces/<str:slug>/projects/<uuid:project_id>/google-meet-summary/",
+        WorkspaceGoogleMeetSummaryEndpoint.as_view(),
+        name="workspace-google-meet-summary",
     ),
 ]

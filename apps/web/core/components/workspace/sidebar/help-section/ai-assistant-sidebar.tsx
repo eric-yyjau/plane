@@ -6,7 +6,7 @@
 
 import { useMemo, useState } from "react";
 import { useParams } from "next/navigation";
-import { Bot, Send, X } from "lucide-react";
+import { Bot, Send, X, FileText, MessageSquare } from "lucide-react";
 import { observer } from "mobx-react";
 // propel
 import { Button } from "@plane/propel/button";
@@ -31,6 +31,8 @@ export const AIAssistantSidebar = observer(() => {
   const { workspaceSlug, projectId } = useParams();
   const { aiAssistantSidebarCollapsed, toggleAIAssistantSidebar } = useAppTheme();
 
+  const [activeTab, setActiveTab] = useState<"chat" | "meet">("chat");
+
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [messages, setMessages] = useState<TChatMessage[]>([
@@ -40,6 +42,9 @@ export const AIAssistantSidebar = observer(() => {
       content: "Hi — I can help brainstorm events, check planning progress, and create tasks in Plane when you ask.",
     },
   ]);
+
+  const [meetTranscript, setMeetTranscript] = useState("");
+  const [isMeetLoading, setIsMeetLoading] = useState(false);
 
   const assistantHistory = useMemo(
     () => messages.map((message) => ({ role: message.role, content: message.content })),
@@ -86,6 +91,44 @@ export const AIAssistantSidebar = observer(() => {
       });
   };
 
+  const handleMeetSubmit = async () => {
+    if (!workspaceSlug || !projectId || !meetTranscript.trim() || isMeetLoading) return;
+    setIsMeetLoading(true);
+    await aiService
+      .createGoogleMeetSummary(workspaceSlug.toString(), projectId.toString(), {
+        transcript: meetTranscript.trim(),
+      })
+      .then((res) => {
+        let text = res.summary;
+        if (res.actions_executed?.length) {
+          const createdIssues = res.actions_executed
+            .map((action) => `• ${action.issue_identifier}: ${action.name}`)
+            .join("\n");
+          text = `${text}\n\nCreated action items:\n${createdIssues}`;
+        }
+
+        setActiveTab("chat");
+        setMessages((prev) => [
+          ...prev,
+          { id: uuidv4(), role: "user", content: "Summarize this meeting transcript." },
+          { id: uuidv4(), role: "assistant", content: text },
+        ]);
+        setMeetTranscript("");
+        return res;
+      })
+      .catch(() => {
+        setToast({
+          type: TOAST_TYPE.ERROR,
+          title: "Google Meet",
+          message: "Could not summarize transcript right now.",
+        });
+        return null;
+      })
+      .finally(() => {
+        setIsMeetLoading(false);
+      });
+  };
+
   if (aiAssistantSidebarCollapsed) return null;
 
   return (
@@ -108,50 +151,109 @@ export const AIAssistantSidebar = observer(() => {
         </button>
       </div>
 
-      <div className="custom-scrollbar flex-1 space-y-3 overflow-y-auto p-4">
-        {messages.map((message) => (
-          <div
-            key={message.id}
-            className={cn(
-              "text-xs shadow-sm max-w-[90%] rounded-md px-3 py-2 whitespace-pre-wrap",
-              message.role === "user"
-                ? "bg-custom-primary-100/10 border-custom-primary-100/20 ml-auto border text-primary"
-                : "border border-subtle bg-layer-2 text-secondary"
+      <div className="flex border-b border-subtle">
+        <button
+          onClick={() => setActiveTab("chat")}
+          className={cn(
+            "text-xs flex flex-1 items-center justify-center gap-2 py-3 font-medium transition-colors",
+            activeTab === "chat" ? "border-primary border-b-2 text-primary" : "text-secondary hover:text-primary"
+          )}
+        >
+          <MessageSquare className="h-3 w-3" />
+          Chat
+        </button>
+        <button
+          onClick={() => setActiveTab("meet")}
+          className={cn(
+            "text-xs flex flex-1 items-center justify-center gap-2 py-3 font-medium transition-colors",
+            activeTab === "meet" ? "border-primary border-b-2 text-primary" : "text-secondary hover:text-primary"
+          )}
+        >
+          <FileText className="h-3 w-3" />
+          Meet Summary
+        </button>
+      </div>
+
+      {activeTab === "chat" && (
+        <>
+          <div className="custom-scrollbar flex-1 space-y-3 overflow-y-auto p-4">
+            {messages.map((message) => (
+              <div
+                key={message.id}
+                className={cn(
+                  "text-xs shadow-sm max-w-[90%] rounded-md px-3 py-2 whitespace-pre-wrap",
+                  message.role === "user"
+                    ? "bg-custom-primary-100/10 border-custom-primary-100/20 ml-auto border text-primary"
+                    : "border border-subtle bg-layer-2 text-secondary"
+                )}
+              >
+                {message.content}
+              </div>
+            ))}
+
+            {isLoading && (
+              <div className="text-xs max-w-[90%] rounded-md border border-subtle bg-layer-2 px-3 py-2 text-secondary italic">
+                Thinking...
+              </div>
             )}
-          >
-            {message.content}
           </div>
-        ))}
 
-        {isLoading && (
-          <div className="text-xs max-w-[90%] rounded-md border border-subtle bg-layer-2 px-3 py-2 text-secondary italic">
-            Thinking...
+          <div className="border-t border-subtle bg-layer-1 p-3">
+            <div className="flex flex-col gap-2">
+              <textarea
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="Ask about event planning..."
+                className="text-xs focus:border-custom-primary-100 min-h-[80px] w-full resize-none rounded-md border border-subtle bg-canvas p-3 text-primary transition-colors outline-none"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSend();
+                  }
+                }}
+              />
+              <div className="flex justify-end">
+                <Button variant="primary" size="sm" onClick={handleSend} loading={isLoading} disabled={!input.trim()}>
+                  <Send className="mr-2 h-3 w-3" />
+                  Send
+                </Button>
+              </div>
+            </div>
           </div>
-        )}
-      </div>
+        </>
+      )}
 
-      <div className="border-t border-subtle bg-layer-1 p-3">
-        <div className="flex flex-col gap-2">
-          <textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask about event planning..."
-            className="text-xs focus:border-custom-primary-100 min-h-[80px] w-full resize-none rounded-md border border-subtle bg-canvas p-3 text-primary transition-colors outline-none"
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                handleSend();
-              }
-            }}
-          />
-          <div className="flex justify-end">
-            <Button variant="primary" size="sm" onClick={handleSend} loading={isLoading} disabled={!input.trim()}>
-              <Send className="mr-2 h-3 w-3" />
-              Send
-            </Button>
+      {activeTab === "meet" && (
+        <div className="flex flex-1 flex-col p-4">
+          <div className="text-xs mb-4 text-secondary">
+            Paste your Google Meet transcript or notes here. The AI will summarize the meeting and automatically create
+            issues for any action items in your current project.
           </div>
+          {!projectId ? (
+            <div className="text-xs rounded-md border border-subtle bg-layer-2 p-4 text-center text-secondary">
+              Please open a specific project to create meeting action items.
+            </div>
+          ) : (
+            <div className="flex flex-1 flex-col gap-3">
+              <textarea
+                value={meetTranscript}
+                onChange={(e) => setMeetTranscript(e.target.value)}
+                placeholder="Paste transcript here..."
+                className="custom-scrollbar text-xs focus:border-custom-primary-100 w-full flex-1 resize-none rounded-md border border-subtle bg-canvas p-3 text-primary transition-colors outline-none"
+              />
+              <Button
+                variant="primary"
+                className="w-full"
+                onClick={handleMeetSubmit}
+                loading={isMeetLoading}
+                disabled={!meetTranscript.trim() || isMeetLoading}
+              >
+                Summarize & Extract Tasks
+              </Button>
+            </div>
+          )}
         </div>
-      </div>
+      )}
     </div>
   );
 });
