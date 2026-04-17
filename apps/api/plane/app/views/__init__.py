@@ -184,6 +184,7 @@ from .external.base import (
     UnsplashEndpoint,
     WorkspaceGPTIntegrationEndpoint,
     WorkspaceAIChatEndpoint,
+    WorkspaceGoogleMeetSummaryEndpoint,
 )
 from .estimate.base import (
     ProjectEstimatePointEndpoint,
