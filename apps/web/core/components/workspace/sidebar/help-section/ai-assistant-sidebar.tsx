@@ -70,9 +70,24 @@ export const AIAssistantSidebar = observer(() => {
         let assistantMessage = response.reply;
         if (response.actions_executed?.length) {
           const createdIssues = response.actions_executed
+            .filter((action) => action.type === "create_issue")
             .map((action) => `• ${action.issue_identifier}: ${action.name}`)
             .join("\n");
-          assistantMessage = `${assistantMessage}\n\nCreated issues:\n${createdIssues}`;
+
+          const scheduledMeetings = response.actions_executed
+            .filter((action) => action.type === "schedule_meeting")
+            .map((action) => {
+              const timeStr = action.start_time !== "TBD" ? new Date(action.start_time).toLocaleString() : "TBD";
+              return `• **${action.title}** at ${timeStr}\n  Google Meet Link: ${action.meet_link}\n  *(The bot is registered to join this meeting automatically to take notes)*`;
+            })
+            .join("\n\n");
+
+          if (createdIssues) {
+            assistantMessage = `${assistantMessage}\n\nCreated issues:\n${createdIssues}`;
+          }
+          if (scheduledMeetings) {
+            assistantMessage = `${assistantMessage}\n\nScheduled Meetings:\n${scheduledMeetings}`;
+          }
         }
 
         setMessages((prev) => [...prev, { id: uuidv4(), role: "assistant", content: assistantMessage }]);

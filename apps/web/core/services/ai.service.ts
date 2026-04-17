@@ -30,10 +30,15 @@ export type TWorkspaceAIChatResponse = {
   reply: string;
   actions_executed: {
     type: string;
-    issue_id: string;
-    project_id: string;
-    issue_identifier: string;
-    name: string;
+    issue_id?: string;
+    project_id?: string;
+    issue_identifier?: string;
+    name?: string;
+    title?: string;
+    start_time?: string;
+    end_time?: string;
+    meet_link?: string;
+    status?: string;
   }[];
 };
 

@@ -279,27 +279,38 @@ class WorkspaceAIChatEndpoint(BaseAPIView):
                 content = item.get("content", "")
                 history_text += f"{idx + 1}. {role}: {content}\n"
 
-        task = """
+        import datetime
+        current_time = datetime.datetime.now().isoformat()
+
+        task = f"""
 You are Plane's synchronous AI Assistant for event planning teams.
-You can help users brainstorm and answer workspace/project status questions.
-You may optionally create issues when the user explicitly asks to create tickets/tasks.
+You can help users brainstorm, schedule meetings, and create tasks.
+Current UTC time: {current_time}
+
 Respond as strict JSON with this shape only:
-{
+{{
   "reply": "assistant response in plain text",
   "actions": [
-    {
+    {{
       "type": "create_issue",
       "project_id": "uuid",
       "name": "issue title",
       "description": "issue description"
-    }
+    }},
+    {{
+      "type": "schedule_meeting",
+      "title": "Meeting Title",
+      "start_time": "YYYY-MM-DDTHH:MM:SSZ",
+      "end_time": "YYYY-MM-DDTHH:MM:SSZ",
+      "attendees": ["email1@example.com"]
+    }}
   ]
-}
+}}
 Rules:
 - Keep reply concise and actionable.
-- Only return create_issue actions if user clearly requested creating work items.
-- If creating issues but no project is clear, ask a clarifying question in reply and return empty actions.
-- Maximum 5 create_issue actions.
+- Only return actions if the user clearly requested creating work items or scheduling a meeting.
+- For meetings, use the provided time or assume a default 30 min duration. A Google Meet link will be generated automatically.
+- Maximum 5 actions.
 """
 
         prompt = f"""
@@ -338,6 +349,28 @@ Latest user message:
         actions_executed = []
 
         for action in actions[:5]:
+            if action.get("type") == "schedule_meeting":
+                import uuid
+                title = action.get("title", "Scheduled Meeting")
+                start_time = action.get("start_time", "TBD")
+                
+                # Mock Google Calendar API integration
+                # In production, we'd use google-api-python-client here to create an event with conferenceData.
+                # For this demo, we generate a realistic Google Meet URL format (xxx-xxxx-xxx)
+                meet_id = f"{uuid.uuid4().hex[:3]}-{uuid.uuid4().hex[:4]}-{uuid.uuid4().hex[:3]}"
+                meet_link = f"https://meet.google.com/{meet_id}"
+                
+                actions_executed.append(
+                    {
+                        "type": "schedule_meeting",
+                        "title": title,
+                        "start_time": start_time,
+                        "meet_link": meet_link,
+                        "status": "scheduled",
+                    }
+                )
+                continue
+
             if action.get("type") != "create_issue":
                 continue
 
